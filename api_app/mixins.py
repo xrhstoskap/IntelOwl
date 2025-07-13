@@ -7,6 +7,7 @@ from typing import Dict, List, Tuple
 
 import requests
 from django.core.cache import cache
+from jbxapi import ApiError, JoeSandbox
 from rest_framework.response import Response
 
 from api_app.analyzers_manager.classes import BaseAnalyzerMixin
@@ -681,3 +682,56 @@ class AbuseCHMixin:
             return {"Auth-Key": self._service_api_key}
 
         return {}
+
+
+class JoeSandboxMixin:
+    _api_key: str
+    system_to_use: str = "lnxubuntu20"
+
+    def wait_for_analysis_to_finish(self, session: JoeSandbox, id: str) -> bool:
+        status: str = ""
+        while status != "finished":
+            try:
+                status = session.submission_info(submission_id=id)["status"]
+                logger.info("Polling again after 60 seconds")
+                time.sleep(60)
+            except Exception as e:
+                raise AnalyzerRunException(f"Analysis failed: {e}")
+        return True if status == "finished" else False
+
+    def check_if_analysis_present(
+        self, session: JoeSandbox, observable_url: str = "", file_hash: str = ""
+    ) -> list[str] | None:
+
+        observable: str = observable_url if observable_url else file_hash
+
+        try:
+            analysis_list = session.analysis_search(observable)
+            if analysis_list:
+                logger.info(f"Analysis already present for {observable}")
+                result = []
+                for analysis in analysis_list:
+                    result.append(analysis["webid"])
+                return result
+        except ApiError as e:
+            logger.error(
+                f"Failed to check if analysis is present,due to the error : {e}"
+            )
+
+        logger.info(f"No existing analysis found for {observable}")
+        return None
+
+    def check_submission_exists(
+        self, session: JoeSandbox, observable_url: str = "", file_name: str = ""
+    ) -> str | None:
+
+        observable: str = observable_url if observable_url else file_name
+
+        logger.info(f"Checking if submssion exists for {observable}")
+        submission_list = session.submission_list()
+        for submission in submission_list:
+            submission_info = session.submission_info(submission["submission_id"])
+            if observable == submission_info["name"]:
+                logger.info("Existing submission found")
+                return submission_info["most_relevant_analysis"]["webid"]
+        return None
