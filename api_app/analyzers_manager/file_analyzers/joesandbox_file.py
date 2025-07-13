@@ -53,21 +53,21 @@ class JoeSandboxFile(FileAnalyzer, JoeSandboxMixin):
                     (self.filename, sample_file), params=params, _chunked_upload=True
                 )
 
-                submission_info = sandbox_session.submission_info(
-                    submission["submission_id"]
-                )
-                most_relevant_analysis_id = submission_info["most_relevant_analysis"][
-                    "webid"
-                ]
-
                 logger.info(
-                    f"Sample submitted successfully with analysis_id: {most_relevant_analysis_id}"
+                    f"Sample submitted successfully with submission_id: {submission['submission_id']}"
                 )
 
                 if self.wait_for_analysis_to_finish(
                     sandbox_session, submission["submission_id"]
                 ):
                     logger.info(f"Analysis completed successfully for {self.filename}")
+
+                    submission_info = sandbox_session.submission_info(
+                        submission["submission_id"]
+                    )
+                    most_relevant_analysis_id = submission_info[
+                        "most_relevant_analysis"
+                    ]["webid"]
                     return sandbox_session.analysis_info(most_relevant_analysis_id)
 
         except Exception as e:

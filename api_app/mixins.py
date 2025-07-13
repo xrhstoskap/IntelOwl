@@ -733,5 +733,9 @@ class JoeSandboxMixin:
             submission_info = session.submission_info(submission["submission_id"])
             if observable == submission_info["name"]:
                 logger.info("Existing submission found")
-                return submission_info["most_relevant_analysis"]["webid"]
+                # checking if submission is in 'finished' state
+                if self.wait_for_analysis_to_finish(
+                    session, submission["submission_id"]
+                ):
+                    return submission_info["most_relevant_analysis"]["webid"]
         return None

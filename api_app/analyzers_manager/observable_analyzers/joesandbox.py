@@ -24,7 +24,7 @@ class JoeSandboxAnalyzer(ObservableAnalyzer, JoeSandboxMixin):
         )
 
         logger.info(
-            f"Observable submitted successfully with submission id: {submission["submission_id"]}"
+            f"Observable submitted successfully with submission id: {submission['submission_id']}"
         )
         return submission["submission_id"]
 
@@ -62,15 +62,16 @@ class JoeSandboxAnalyzer(ObservableAnalyzer, JoeSandboxMixin):
         else:
             logger.info(f"Creating new submission for {self.observable_name}")
             submission_id = self.submit_observable(sandbox_session)
-            submission_info = sandbox_session.submission_info(submission_id)
-            most_relevant_analysis_id = submission_info["most_relevant_analysis"][
-                "webid"
-            ]
+
             try:
                 if self.wait_for_analysis_to_finish(sandbox_session, submission_id):
                     logger.info(
                         f"Analysis completed successfully for {self.observable_name}"
                     )
+                    submission_info = sandbox_session.submission_info(submission_id)
+                    most_relevant_analysis_id = submission_info[
+                        "most_relevant_analysis"
+                    ]["webid"]
                     return sandbox_session.analysis_info(most_relevant_analysis_id)
 
             except Exception as e:
