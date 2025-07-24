@@ -67,12 +67,20 @@ class CapaInfo(FileAnalyzer):
         for signature in signatures_list:
             try:
                 process = subprocess.run(
-                    ["wget", "-O", SIGNATURE_LOCATION, signature["download_url"]]
+                    [
+                        "/usr/bin/wget",
+                        "-O",
+                        SIGNATURE_LOCATION,
+                        signature["download_url"],
+                    ],
+                    check=True,
                 )
+
             except subprocess.CalledProcessError as e:
+                stderr = process.stderr
                 logger.error(f"Failed to download signature: {e}")
                 raise AnalyzerRunException(
-                    f"Failed to update signatures due to error: {process.stderr}"
+                    f"Failed to update signatures due to error: {stderr}"
                 )
         logger.info("Successfully updated singatures")
 
@@ -109,7 +117,7 @@ class CapaInfo(FileAnalyzer):
                     "Couldn't update capa rules or signatures successfully"
                 )
 
-            command: list[str] = ["capa", "--quiet", "--json"]
+            command: list[str] = ["/usr/local/bin/capa", "--quiet", "--json"]
             shell_code_arch = "sc64" if self.arch == "64" else "sc32"
             if self.shellcode:
                 command.append("-f")
@@ -128,17 +136,21 @@ class CapaInfo(FileAnalyzer):
             logger.info(f"Starting CAPA analysis for {self.filename}")
 
             process: subprocess.CompletedProcess = subprocess.run(
-                command, capture_output=True, text=True, timeout=self.timeout
+                command,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                check=True,
             )
 
-            process.check_returncode()
             result = json.loads(process.stdout)
             logger.info("CAPA analysis successfully completed")
 
         except subprocess.CalledProcessError as e:
+            stderr = process.stderr
             logger.info(f"Capa Info failed to run for {self.filename} with command {e}")
             raise AnalyzerRunException(
-                f" Analyzer for {self.filename} failed with error: {process.stderr}"
+                f" Analyzer for {self.filename} failed with error: {stderr}"
             )
 
         return result

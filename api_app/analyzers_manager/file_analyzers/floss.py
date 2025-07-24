@@ -38,19 +38,26 @@ class Floss(FileAnalyzer, DockerBasedAnalyzer):
         # retrieve them with more simple tools
         try:
             process: subprocess.CompletedProcess = subprocess.run(
-                ["floss", "--json", "--no", "static", "--", self.filepath],
+                [
+                    "/usr/local/bin/floss",
+                    "--json",
+                    "--no",
+                    "static",
+                    "--",
+                    self.filepath,
+                ],
                 capture_output=True,
                 text=True,
+                check=True,
             )
-
-            process.check_returncode()
 
             result = loads(process.stdout)
 
         except subprocess.CalledProcessError as e:
+            stderr = process.stderr
             logger.info(f"Floss failed to run for {self.filename} with command {e}")
             raise AnalyzerRunException(
-                f" Analyzer for {self.filename} failed with error: {process.stderr}"
+                f" Analyzer for {self.filename} failed with error: {stderr}"
             )
 
         result["exceeded_max_number_of_strings"] = {}
