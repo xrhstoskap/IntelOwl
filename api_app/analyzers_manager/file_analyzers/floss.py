@@ -54,7 +54,7 @@ class Floss(FileAnalyzer, DockerBasedAnalyzer):
             result = loads(process.stdout)
 
         except subprocess.CalledProcessError as e:
-            stderr = process.stderr
+            stderr = e.stderr
             logger.info(f"Floss failed to run for {self.filename} with command {e}")
             raise AnalyzerRunException(
                 f" Analyzer for {self.filename} failed with error: {stderr}"
