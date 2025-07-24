@@ -1,40 +1,169 @@
 # This file is a part of IntelOwl https://github.com/intelowlproject/IntelOwl
 # See the file 'LICENSE' for copying permission.
-from typing import Dict
 
-from api_app.analyzers_manager.classes import DockerBasedAnalyzer, FileAnalyzer
+import json
+import logging
+import os
+import subprocess
+from zipfile import ZipFile
+
+import requests
+from django.conf import settings
+
+from api_app.analyzers_manager.classes import FileAnalyzer
+from api_app.analyzers_manager.exceptions import AnalyzerRunException
+from tests.mock_utils import if_mock_connections, patch
+
+logger = logging.getLogger(__name__)
+
+BASE_LOCATION = f"{settings.MEDIA_ROOT}/capa"
+RULES_LOCATION = f"{BASE_LOCATION}/capa-rules"
+SIGNATURE_LOCATION = f"{BASE_LOCATION}/sigs"
+RULES_FILE = f"{RULES_LOCATION}/capa_rules.zip"
+RULES_URL = "https://github.com/mandiant/capa-rules/archive/refs/tags/"
 
 
-class CapaInfo(FileAnalyzer, DockerBasedAnalyzer):
-    name: str = "Capa"
-    url: str = "http://malware_tools_analyzers:4002/capa"
-    # interval between http request polling
-    poll_distance: int = 10
-    # http request polling max number of tries
-    max_tries: int = 60
-    # here, max_tries * poll_distance = 10 minutes
-    timeout: int = 60 * 9
-    # whereas subprocess timeout is kept as 60 * 9 = 9 minutes
-
+class CapaInfo(FileAnalyzer):
     shellcode: bool
     arch: str
+    timeout: float = 15
 
-    def config(self, runtime_configuration: Dict):
-        super().config(runtime_configuration)
-        self.args = []
-        if self.arch != "64":
-            self.arch = "32"
-        if self.shellcode:
-            self.args.append("-f")
-            self.args.append("sc" + self.arch)
+    @classmethod
+    def _unzip(cls):
+        logger.info(f"Extracting rules at {RULES_LOCATION}")
+        with ZipFile(RULES_FILE, mode="r") as archive:
+            archive.extractall(
+                RULES_LOCATION
+            )  # this will overwrite any existing directory
+        logger.info("Rules have been succesfully extracted")
+
+    @classmethod
+    def _download_rules(cls, latest_version: str):
+
+        if not os.path.exists(RULES_LOCATION):
+            os.makedirs(RULES_LOCATION)
+
+        file_to_download = latest_version + ".zip"
+        file_url = RULES_URL + file_to_download
+        response = requests.get(file_url, stream=True)
+        logger.info(f"Started downloading rules from {file_url}")
+        with open(RULES_FILE, mode="wb+") as file:
+            for chunk in response.iter_content(chunk_size=10 * 1024):
+                file.write(chunk)
+
+        logger.info(f"Rules have been successfully downloaded at {RULES_LOCATION}")
+
+    @classmethod
+    def _download_signatures(cls) -> None:
+        logger.info(f"Downloading signatures at {SIGNATURE_LOCATION} now")
+
+        if not os.path.exists(SIGNATURE_LOCATION):
+            os.makedirs(SIGNATURE_LOCATION)
+
+        signatures_url = "https://api.github.com/repos/mandiant/capa/contents/sigs"
+        response = requests.get(signatures_url)
+        signatures_list = response.json()
+
+        for signature in signatures_list:
+            try:
+                process = subprocess.run(
+                    ["wget", "-O", SIGNATURE_LOCATION, signature["download_url"]]
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to download signature: {e}")
+                raise AnalyzerRunException(
+                    f"Failed to update signatures due to error: {process.stderr}"
+                )
+        logger.info("Successfully updated singatures")
+
+    @classmethod
+    def update(cls) -> bool:
+        try:
+            logger.info("Updating capa rules and signatures")
+            response = requests.get(
+                "https://api.github.com/repos/mandiant/capa-rules/releases/latest"
+            )
+            latest_version = response.json()["tag_name"]
+            cls._download_rules(latest_version)
+            cls._unzip()
+            cls._download_signatures()
+            logger.info("Successfully updated capa rules and signatures")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to update capa rules with error: {e}")
+
+        return False
 
     def run(self):
-        # get binary
-        binary = self.read_file_bytes()
-        # make request data
-        fname = str(self.filename).replace("/", "_").replace(" ", "_")
-        args = [f"@{fname}", *self.args]
-        req_data = {"args": args, "timeout": self.timeout}
-        req_files = {fname: binary}
+        try:
+            if (
+                not (
+                    os.path.isdir(RULES_LOCATION) and os.path.isdir(SIGNATURE_LOCATION)
+                )
+                and not self.update()
+            ):
 
-        return self._docker_run(req_data, req_files)
+                raise AnalyzerRunException(
+                    "Couldn't update capa rules or signatures successfully"
+                )
+
+            command: list[str] = ["capa", "--quiet", "--json"]
+            shell_code_arch = "sc64" if self.arch == "64" else "sc32"
+            if self.shellcode:
+                command.append("-f")
+                command.append(shell_code_arch)
+
+            # Setting default capa-rules path
+            command.append("-r")
+            command.append(RULES_LOCATION)
+
+            # Setting default signatures location
+            command.append("-s")
+            command.append(SIGNATURE_LOCATION)
+
+            command.append(self.filepath)
+
+            logger.info(f"Starting CAPA analysis for {self.filename}")
+
+            process: subprocess.CompletedProcess = subprocess.run(
+                command, capture_output=True, text=True, timeout=self.timeout
+            )
+
+            process.check_returncode()
+            result = json.loads(process.stdout)
+            logger.info("CAPA analysis successfully completed")
+
+        except subprocess.CalledProcessError as e:
+            logger.info(f"Capa Info failed to run for {self.filename} with command {e}")
+            raise AnalyzerRunException(
+                f" Analyzer for {self.filename} failed with error: {process.stderr}"
+            )
+
+        return result
+
+    @classmethod
+    def _monkeypatch(cls):
+        response_from_command = subprocess.CompletedProcess(
+            args=[
+                "capa",
+                "--quiet",
+                "--json",
+                "-r",
+                "/opt/deploy/files_required/capa/capa-rules",
+                "-s",
+                "/opt/deploy/files_required/capa/sigs",
+                "/opt/deploy/files_required/06ebf06587b38784e2af42dd5fbe56e5",
+            ],
+            returncode=0,
+            stdout='{"meta": {}, "rules": {"contain obfuscated stackstrings": {}, "enumerate PE sections":{}}}',
+            stderr="",
+        )
+        patches = [
+            if_mock_connections(
+                patch.object(CapaInfo, "update", return_value=True),
+                patch("subprocess.run", return_value=response_from_command),
+            )
+        ]
+        return super()._monkeypatch(patches)
