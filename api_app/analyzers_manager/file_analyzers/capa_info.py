@@ -69,11 +69,12 @@ class CapaInfo(FileAnalyzer):
                 subprocess.run(
                     [
                         "/usr/bin/wget",
-                        "-O",
+                        "-P",
                         SIGNATURE_LOCATION,
                         signature["download_url"],
                     ],
                     check=True,
+                    capture_output=True,
                 )
 
             except subprocess.CalledProcessError as e:
