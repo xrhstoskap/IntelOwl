@@ -4,6 +4,7 @@
 import logging
 import subprocess
 from json import dumps, loads
+from shlex import quote
 
 from api_app.analyzers_manager.classes import DockerBasedAnalyzer, FileAnalyzer
 from api_app.analyzers_manager.exceptions import AnalyzerRunException
@@ -44,7 +45,7 @@ class Floss(FileAnalyzer, DockerBasedAnalyzer):
                     "--no",
                     "static",
                     "--",
-                    self.filepath,
+                    quote(self.filepath),
                 ],
                 capture_output=True,
                 text=True,

@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import subprocess
+from shlex import quote
 from zipfile import ZipFile
 
 import requests
@@ -45,11 +46,17 @@ class CapaInfo(FileAnalyzer):
 
         file_to_download = latest_version + ".zip"
         file_url = RULES_URL + file_to_download
-        response = requests.get(file_url, stream=True)
-        logger.info(f"Started downloading rules from {file_url}")
-        with open(RULES_FILE, mode="wb+") as file:
-            for chunk in response.iter_content(chunk_size=10 * 1024):
-                file.write(chunk)
+        try:
+
+            response = requests.get(file_url, stream=True)
+            logger.info(f"Started downloading rules from {file_url}")
+            with open(RULES_FILE, mode="wb+") as file:
+                for chunk in response.iter_content(chunk_size=10 * 1024):
+                    file.write(chunk)
+
+        except Exception as e:
+            logger.error(f"Failed to download rules with error: {e}")
+            raise AnalyzerRunException("Failed to download rules")
 
         logger.info(f"Rules have been successfully downloaded at {RULES_LOCATION}")
 
@@ -61,28 +68,23 @@ class CapaInfo(FileAnalyzer):
             os.makedirs(SIGNATURE_LOCATION)
 
         signatures_url = "https://api.github.com/repos/mandiant/capa/contents/sigs"
-        response = requests.get(signatures_url)
-        signatures_list = response.json()
+        try:
+            response = requests.get(signatures_url)
+            signatures_list = response.json()
 
-        for signature in signatures_list:
-            try:
-                subprocess.run(
-                    [
-                        "/usr/bin/wget",
-                        "-P",
-                        SIGNATURE_LOCATION,
-                        signature["download_url"],
-                    ],
-                    check=True,
-                    capture_output=True,
-                )
+            for signature in signatures_list:
 
-            except subprocess.CalledProcessError as e:
-                stderr = e.stderr
-                logger.error(f"Failed to download signature: {e}")
-                raise AnalyzerRunException(
-                    f"Failed to update signatures due to error: {stderr}"
-                )
+                filename = signature["name"]
+                download_url = signature["download_url"]
+
+                sig_content = requests.get(download_url, stream=True)
+                with open(filename, mode="wb") as file:
+                    for chunk in sig_content.iter_content(chunk_size=10 * 1024):
+                        file.write(chunk)
+
+        except Exception as e:
+            logger.error(f"Failed to download signature: {e}")
+            raise AnalyzerRunException("Failed to update signatures")
         logger.info("Successfully updated singatures")
 
     @classmethod
@@ -132,7 +134,7 @@ class CapaInfo(FileAnalyzer):
             command.append("-s")
             command.append(SIGNATURE_LOCATION)
 
-            command.append(self.filepath)
+            command.append(quote(self.filepath))
 
             logger.info(f"Starting CAPA analysis for {self.filename}")
 
