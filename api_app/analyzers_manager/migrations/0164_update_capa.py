@@ -31,7 +31,7 @@ def migrate(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("analyzers_manager", "0160_update_greedybear"),
+        ("analyzers_manager", "0163_analyzer_config_guarddoggeneric"),
     ]
 
     operations = [migrations.RunPython(migrate, migrations.RunPython.noop)]
