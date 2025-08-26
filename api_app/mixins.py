@@ -686,21 +686,27 @@ class AbuseCHMixin:
 
 class JoeSandboxMixin:
     _api_key: str
-    system_to_use: str = "lnxubuntu20"
+    system_to_use: str
+    polling_duration: int = 60
+    force_new_analysis: bool = False
 
     def wait_for_analysis_to_finish(self, session: JoeSandbox, id: str) -> bool:
         status: str = ""
         while status != "finished":
             try:
                 status = session.submission_info(submission_id=id)["status"]
-                logger.info("Polling again after 60 seconds")
-                time.sleep(60)
+                logger.info(
+                    f"Polling again after {self.polling_duration} seconds for submission_id {id}"
+                )
+                time.sleep(self.polling_duration)
             except Exception as e:
                 raise AnalyzerRunException(f"Analysis failed: {e}")
-        return True if status == "finished" else False
 
+        return bool(status == "finished")
+
+    @staticmethod
     def check_if_analysis_present(
-        self, session: JoeSandbox, observable_url: str = "", file_hash: str = ""
+        session: JoeSandbox, observable_url: str = "", file_hash: str = ""
     ) -> list[str] | None:
 
         observable: str = observable_url if observable_url else file_hash
@@ -732,10 +738,90 @@ class JoeSandboxMixin:
         for submission in submission_list:
             submission_info = session.submission_info(submission["submission_id"])
             if observable == submission_info["name"]:
-                logger.info("Existing submission found")
+                logger.info(
+                    f"Existing submission found with {submission['submission_id']}"
+                )
                 # checking if submission is in 'finished' state
                 if self.wait_for_analysis_to_finish(
                     session, submission["submission_id"]
                 ):
                     return submission_info["most_relevant_analysis"]["webid"]
+        return None
+
+    def create_new_analysis(
+        self,
+        sandbox_session: JoeSandbox,
+        observable_url: str = "",
+        sample_at_url: bool = False,
+        file_details: tuple = (),
+    ) -> str:
+        params = {"systems": self.system_to_use}
+        logger.info(f"Selected system for analysis: {self.system_to_use}")
+        # if File is being provided for analysis
+        if file_details:
+            logger.info(f"Creating new submission for filename: {file_details[0]}")
+            submission: dict = sandbox_session.submit_sample(
+                file_details, params=params, _chunked_upload=True
+            )
+
+        # if URL is being provided for analysis
+        else:
+            logger.info(f"Submitting observable: {observable_url}")
+            submission: dict = (
+                sandbox_session.submit_sample_url(observable_url, params=params)
+                if sample_at_url
+                else sandbox_session.submit_url(observable_url, params=params)
+            )
+
+        logger.info(
+            f"Sample submitted successfully with submission_id: {submission['submission_id']}"
+        )
+
+        return submission["submission_id"]
+
+    def fetch_results(
+        self, sandbox_session: JoeSandbox, submission_id: str, observable_name: str
+    ) -> dict:
+        if self.wait_for_analysis_to_finish(sandbox_session, submission_id):
+            logger.info(f"Analysis completed successfully for {observable_name}")
+            submission_info = sandbox_session.submission_info(submission_id)
+            most_relevant_analysis_id = submission_info["most_relevant_analysis"][
+                "webid"
+            ]
+
+            return sandbox_session.analysis_info(most_relevant_analysis_id)
+
+    def fetch_existing_results_if_present(
+        self,
+        sandbox_session: JoeSandbox,
+        observable_name: str,
+        observable_url: str = "",
+        file_hash: str = "",
+    ) -> dict | None:
+
+        # checking if similar submission in private account is already present
+        analysis_id = self.check_submission_exists(
+            sandbox_session, file_name=observable_name
+        )
+        if analysis_id:
+            return {analysis_id: sandbox_session.analysis_info(analysis_id)}
+
+        logger.info(f"Existing submission for {observable_name} not found")
+
+        # checking if similar analysis is present in public DB
+        logger.info(f"Checking if analysis is present for {observable_name}")
+        analysis_ids = (
+            self.check_if_analysis_present(session=sandbox_session, file_hash=file_hash)
+            if file_hash
+            else self.check_if_analysis_present(
+                session=sandbox_session, observable_url=observable_url
+            )
+        )
+
+        if analysis_ids:
+            analysis_result = {}
+            for id in analysis_ids:
+                analysis_result[id] = sandbox_session.analysis_info(id)
+            return analysis_result
+
         return None

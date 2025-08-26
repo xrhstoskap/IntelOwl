@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class JoeSandboxFile(FileAnalyzer, JoeSandboxMixin):
-    url: str
+    url: str = "https://www.joesandbox.com/api/"
 
     @classmethod
     def update(cls):
@@ -24,105 +24,36 @@ class JoeSandboxFile(FileAnalyzer, JoeSandboxMixin):
         sample_file = self._job.analyzable.file
 
         try:
-
-            # return submission results if there exists a submission with same file observable
-            analysis_id = self.check_submission_exists(
-                sandbox_session, file_name=self.filename
-            )
-            if analysis_id:
-                return {analysis_id: sandbox_session.analysis_info(analysis_id)}
-
-            logger.info("Existing submission not found")
-
-            # return analysis result if analysis is present in public DB
-            logger.info(f"Checking if analysis is present for {self.filename}")
-            analysis_ids = self.check_if_analysis_present(
-                session=sandbox_session, file_hash=self.md5
-            )
-            if analysis_ids:
-                analysis_result = {}
-                for id in analysis_ids:
-                    analysis_result[id] = sandbox_session.analysis_info(id)
-                return analysis_result
-
-            # submit new sample if no existing analysis
-            else:
-                logger.info(f"Creating new submission for {self.filename}")
-                params = {"systems": self.system_to_use}
-                submission = sandbox_session.submit_sample(
-                    (self.filename, sample_file), params=params, _chunked_upload=True
+            if not self.force_new_analysis:
+                # checking if existing analysis is present and returns the results
+                existing_results = self.fetch_existing_results_if_present(
+                    sandbox_session=sandbox_session,
+                    observable_name=self.filename,
+                    file_hash=self.md5,
                 )
 
-                logger.info(
-                    f"Sample submitted successfully with submission_id: {submission['submission_id']}"
-                )
+                if existing_results:
+                    return existing_results
 
-                if self.wait_for_analysis_to_finish(
-                    sandbox_session, submission["submission_id"]
-                ):
-                    logger.info(f"Analysis completed successfully for {self.filename}")
+            # submit new sample if no existing analysis is present
+            file_details = (self.filename, sample_file)
 
-                    submission_info = sandbox_session.submission_info(
-                        submission["submission_id"]
-                    )
-                    most_relevant_analysis_id = submission_info[
-                        "most_relevant_analysis"
-                    ]["webid"]
-                    return sandbox_session.analysis_info(most_relevant_analysis_id)
+            submission_id = self.create_new_analysis(
+                sandbox_session=sandbox_session, file_details=file_details
+            )
+            results = self.fetch_results(
+                sandbox_session=sandbox_session,
+                submission_id=submission_id,
+                observable_name=self.filename,
+            )
+
+            return results
 
         except Exception as e:
             raise AnalyzerRunException(f"Something went wrong: {e}")
 
     @classmethod
     def _monkeypatch(cls):
-
-        submission_info_response = {
-            "submission_id": "178",
-            "name": "Sample.exe",
-            "status": "finished",
-            "time": "2019-04-15T08:05:05+00:00",
-            # // present for any status after 'accepted',
-            # // can be null if there are no analyses
-            "most_relevant_analysis": {
-                "webid": "179",
-                "detection": "clean",
-                "score": 30,
-            },
-            # // present for any status after 'accepted'
-            "analyses": [
-                {
-                    "webid": "179",
-                    "time": "2019-04-15T08:05:08+00:00",
-                    "runs": [
-                        {
-                            "detection": "clean",
-                            "error": None,
-                            "system": "w7",
-                            "yara": False,
-                        },
-                        {
-                            "detection": "clean",
-                            "error": None,
-                            "system": "w7x64",
-                            "yara": False,
-                        },
-                    ],
-                    "tags": [],
-                    "analysisid": "127",
-                    "duration": 1,
-                    "encrypted": False,
-                    "md5": "098f6bcd4621d373cade4e832627b4f6",
-                    "sha1": "a94a8fe5ccb19ba61c4c0873d391e987982fbbd3",
-                    "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-                    "filename": "Sample.exe",
-                    "scriptname": "defaultwindowsofficecookbook.jbs",
-                    "status": "finished",
-                    "comments": "",
-                    # // Present while Live Interaction is active
-                    "live-interaction-url": "https://joesandbox.com/analysis/123456789",
-                },
-            ],
-        }
 
         analysis_info_response = {
             "webid": "100",
@@ -167,22 +98,15 @@ class JoeSandboxFile(FileAnalyzer, JoeSandboxMixin):
         patches = [
             if_mock_connections(
                 patch.object(
-                    JoeSandboxFile, "check_submission_exists", return_value=None
+                    JoeSandboxFile,
+                    "fetch_existing_results_if_present",
+                    return_value=analysis_info_response,
                 ),
                 patch.object(
-                    JoeSandboxFile, "check_if_analysis_present", return_value=None
+                    JoeSandboxFile, "create_new_analysis", return_value="1008"
                 ),
                 patch.object(
-                    JoeSandbox, "submit_sample", return_value={"submission_id": "178"}
-                ),
-                patch.object(
-                    JoeSandboxFile, "wait_for_analysis_to_finish", return_value=True
-                ),
-                patch.object(
-                    JoeSandbox, "submission_info", return_value=submission_info_response
-                ),
-                patch.object(
-                    JoeSandbox, "analysis_info", return_value=analysis_info_response
+                    JoeSandboxFile, "fetch_results", return_value=analysis_info_response
                 ),
             )
         ]
