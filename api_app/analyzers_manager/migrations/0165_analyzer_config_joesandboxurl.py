@@ -11,29 +11,23 @@ plugin = {
     "python_module": {
         "health_check_schedule": None,
         "update_schedule": None,
-        "module": "joesandbox_file.JoeSandboxFile",
-        "base_path": "api_app.analyzers_manager.file_analyzers",
+        "module": "joesandbox.JoeSandboxAnalyzer",
+        "base_path": "api_app.analyzers_manager.observable_analyzers",
     },
-    "name": "JoeSandboxFile",
-    "description": "[JoeSandboxFile](https://www.joesandbox.com/) is a comprehensive malware analysis tool, which can be used to perform deep malware analysis, on various platforms such as windows, macos, linux, android.",
+    "name": "JoeSandboxURL",
+    "description": "[JoeSandbox](https://www.joesandbox.com/) is a comprehensive malware analysis tool, which performs in-depth phishing and malware analysis on a provided URL or sample file, downloadable from a URL, of various formats over various types of systems such windows, macos, android, linux.",
     "disabled": False,
-    "soft_time_limit": 1800,
+    "soft_time_limit": 1000,
     "routing_key": "default",
     "health_check_status": True,
-    "type": "file",
+    "type": "observable",
     "docker_based": False,
     "maximum_tlp": "AMBER",
-    "observable_supported": [],
+    "observable_supported": ["url"],
     "supported_filetypes": [],
     "run_hash": False,
     "run_hash_type": "",
-    "not_supported_filetypes": [
-        "application/xml",
-        "text/xml",
-        "application/encrypted",
-        "text/plain",
-        "application/json",
-    ],
+    "not_supported_filetypes": [],
     "mapping_data_model": {},
     "model": "analyzers_manager.AnalyzerConfig",
 }
@@ -41,30 +35,19 @@ plugin = {
 params = [
     {
         "python_module": {
-            "module": "joesandbox_file.JoeSandboxFile",
-            "base_path": "api_app.analyzers_manager.file_analyzers",
+            "module": "joesandbox.JoeSandboxAnalyzer",
+            "base_path": "api_app.analyzers_manager.observable_analyzers",
         },
         "name": "url",
         "type": "str",
-        "description": "URL for your private JoeSandbox Instance. Defaults to public JoeSandBox URL.",
+        "description": "URL for your private JoeSandbox instance. Defaults to public JoeSandBox URL.",
         "is_secret": False,
         "required": False,
     },
     {
         "python_module": {
-            "module": "joesandbox_file.JoeSandboxFile",
-            "base_path": "api_app.analyzers_manager.file_analyzers",
-        },
-        "name": "system_to_use",
-        "type": "str",
-        "description": "System to use for analysis. Possible values for available systems to use are: \r\n\r\nWindows: w11x64_office, w10x64, w10x64native, w7x64\r\nLinux: lnxubuntu20, lnxubuntu1\r\nMacOS: macvm-mojave\r\n\r\nRead the Intelowl Usage docs, for more info on the systems.",
-        "is_secret": False,
-        "required": True,
-    },
-    {
-        "python_module": {
-            "module": "joesandbox_file.JoeSandboxFile",
-            "base_path": "api_app.analyzers_manager.file_analyzers",
+            "module": "joesandbox.JoeSandboxAnalyzer",
+            "base_path": "api_app.analyzers_manager.observable_analyzers",
         },
         "name": "api_key",
         "type": "str",
@@ -74,8 +57,30 @@ params = [
     },
     {
         "python_module": {
-            "module": "joesandbox_file.JoeSandboxFile",
-            "base_path": "api_app.analyzers_manager.file_analyzers",
+            "module": "joesandbox.JoeSandboxAnalyzer",
+            "base_path": "api_app.analyzers_manager.observable_analyzers",
+        },
+        "name": "sample_at_url",
+        "type": "bool",
+        "description": "Set it to True, if analysis needs to be performed over a sample file which is downloadable from particular URL being provided. Defaults to False.",
+        "is_secret": False,
+        "required": False,
+    },
+    {
+        "python_module": {
+            "module": "joesandbox.JoeSandboxAnalyzer",
+            "base_path": "api_app.analyzers_manager.observable_analyzers",
+        },
+        "name": "system_to_use",
+        "type": "str",
+        "description": "System to use for analysis. Possible values for available systems to use are: \r\n\r\nWindows: w11x64_office, w10x64, w10x64native, w7x64\r\nLinux: lnxubuntu20, lnxubuntu1\r\nMacOS: macvm-mojave\r\n\r\nRead the Intelowl Usage docs, for more info on the systems.",
+        "is_secret": False,
+        "required": True,
+    },
+    {
+        "python_module": {
+            "module": "joesandbox.JoeSandboxAnalyzer",
+            "base_path": "api_app.analyzers_manager.observable_analyzers",
         },
         "name": "polling_duration",
         "type": "int",
@@ -85,8 +90,8 @@ params = [
     },
     {
         "python_module": {
-            "module": "joesandbox_file.JoeSandboxFile",
-            "base_path": "api_app.analyzers_manager.file_analyzers",
+            "module": "joesandbox.JoeSandboxAnalyzer",
+            "base_path": "api_app.analyzers_manager.observable_analyzers",
         },
         "name": "force_new_analysis",
         "type": "bool",
@@ -181,7 +186,7 @@ class Migration(migrations.Migration):
     atomic = False
     dependencies = [
         ("api_app", "0071_delete_last_elastic_report"),
-        ("analyzers_manager", "0159_analyzer_config_expandurl"),
+        ("analyzers_manager", "0164_analyzer_config_joesandboxfile"),
     ]
 
     operations = [migrations.RunPython(migrate, reverse_migrate)]

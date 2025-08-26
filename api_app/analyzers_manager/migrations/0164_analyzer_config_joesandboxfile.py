@@ -11,23 +11,29 @@ plugin = {
     "python_module": {
         "health_check_schedule": None,
         "update_schedule": None,
-        "module": "joesandbox.JoeSandboxAnalyzer",
-        "base_path": "api_app.analyzers_manager.observable_analyzers",
+        "module": "joesandbox_file.JoeSandboxFile",
+        "base_path": "api_app.analyzers_manager.file_analyzers",
     },
-    "name": "JoeSandboxURL",
-    "description": "[JoeSandbox](https://www.joesandbox.com/) is a comprehensive malware analysis tool, which performs in-depth phishing and malware analysis on a provided URL or sample file, downloadable from a URL, of various formats over various types of systems such windows, macos, android, linux.",
+    "name": "JoeSandboxFile",
+    "description": "[JoeSandboxFile](https://www.joesandbox.com/) is a comprehensive malware analysis tool, which can be used to perform deep malware analysis, on various platforms such as windows, macos, linux, android.",
     "disabled": False,
-    "soft_time_limit": 1000,
+    "soft_time_limit": 1800,
     "routing_key": "default",
     "health_check_status": True,
-    "type": "observable",
+    "type": "file",
     "docker_based": False,
     "maximum_tlp": "AMBER",
-    "observable_supported": ["url"],
+    "observable_supported": [],
     "supported_filetypes": [],
     "run_hash": False,
     "run_hash_type": "",
-    "not_supported_filetypes": [],
+    "not_supported_filetypes": [
+        "application/xml",
+        "text/xml",
+        "application/encrypted",
+        "text/plain",
+        "application/json",
+    ],
     "mapping_data_model": {},
     "model": "analyzers_manager.AnalyzerConfig",
 }
@@ -35,41 +41,19 @@ plugin = {
 params = [
     {
         "python_module": {
-            "module": "joesandbox.JoeSandboxAnalyzer",
-            "base_path": "api_app.analyzers_manager.observable_analyzers",
+            "module": "joesandbox_file.JoeSandboxFile",
+            "base_path": "api_app.analyzers_manager.file_analyzers",
         },
         "name": "url",
         "type": "str",
-        "description": "URL for your private JoeSandbox instance. Defaults to public JoeSandBox URL.",
+        "description": "URL for your private JoeSandbox Instance. Defaults to public JoeSandBox URL.",
         "is_secret": False,
         "required": False,
     },
     {
         "python_module": {
-            "module": "joesandbox.JoeSandboxAnalyzer",
-            "base_path": "api_app.analyzers_manager.observable_analyzers",
-        },
-        "name": "api_key",
-        "type": "str",
-        "description": "API key for JoeSandbox Instance.",
-        "is_secret": True,
-        "required": True,
-    },
-    {
-        "python_module": {
-            "module": "joesandbox.JoeSandboxAnalyzer",
-            "base_path": "api_app.analyzers_manager.observable_analyzers",
-        },
-        "name": "sample_at_url",
-        "type": "bool",
-        "description": "Set it to True, if analysis needs to be performed over a sample file which is downloadable from particular URL being provided. Defaults to False.",
-        "is_secret": False,
-        "required": False,
-    },
-    {
-        "python_module": {
-            "module": "joesandbox.JoeSandboxAnalyzer",
-            "base_path": "api_app.analyzers_manager.observable_analyzers",
+            "module": "joesandbox_file.JoeSandboxFile",
+            "base_path": "api_app.analyzers_manager.file_analyzers",
         },
         "name": "system_to_use",
         "type": "str",
@@ -79,8 +63,19 @@ params = [
     },
     {
         "python_module": {
-            "module": "joesandbox.JoeSandboxAnalyzer",
-            "base_path": "api_app.analyzers_manager.observable_analyzers",
+            "module": "joesandbox_file.JoeSandboxFile",
+            "base_path": "api_app.analyzers_manager.file_analyzers",
+        },
+        "name": "api_key",
+        "type": "str",
+        "description": "API key for JoeSandbox Instance.",
+        "is_secret": True,
+        "required": True,
+    },
+    {
+        "python_module": {
+            "module": "joesandbox_file.JoeSandboxFile",
+            "base_path": "api_app.analyzers_manager.file_analyzers",
         },
         "name": "polling_duration",
         "type": "int",
@@ -90,8 +85,8 @@ params = [
     },
     {
         "python_module": {
-            "module": "joesandbox.JoeSandboxAnalyzer",
-            "base_path": "api_app.analyzers_manager.observable_analyzers",
+            "module": "joesandbox_file.JoeSandboxFile",
+            "base_path": "api_app.analyzers_manager.file_analyzers",
         },
         "name": "force_new_analysis",
         "type": "bool",
@@ -186,7 +181,7 @@ class Migration(migrations.Migration):
     atomic = False
     dependencies = [
         ("api_app", "0071_delete_last_elastic_report"),
-        ("analyzers_manager", "0161_analyzer_config_joesandboxfile"),
+        ("analyzers_manager", "0163_analyzer_config_guarddoggeneric"),
     ]
 
     operations = [migrations.RunPython(migrate, reverse_migrate)]
