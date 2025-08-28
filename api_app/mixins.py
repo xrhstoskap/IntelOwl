@@ -705,9 +705,8 @@ class JoeSandboxMixin:
 
         return bool(status == "finished")
 
-    @staticmethod
     def check_if_analysis_present(
-        session: JoeSandbox, analysis_sample: str
+        self, session: JoeSandbox, analysis_sample: str
     ) -> list[str] | None:
 
         try:
@@ -719,9 +718,12 @@ class JoeSandboxMixin:
                     result.append(analysis["webid"])
                 return result
         except ApiError as e:
-            logger.error(
-                f"Failed to check if analysis is present,due to the error : {e}"
+            error_message = (
+                f"Failed to check if analysis is present, due to the error : {e}"
             )
+            logger.error(error_message)
+            self.report.errors.append(error_message)
+            self.report.save()
 
         logger.info(f"No existing analysis found for {analysis_sample}")
         return None
@@ -756,7 +758,9 @@ class JoeSandboxMixin:
         logger.info(f"Selected system for analysis: {self.system_to_use}")
         # if File is being provided for analysis
         if file_details:
-            logger.info(f"Creating new submission for filename: {file_details[0]}")
+            logger.info(
+                f"Creating new submission for filename: {file_details[0]} with hash {self.md5}"
+            )
             submission: dict = sandbox_session.submit_sample(
                 file_details, params=params, _chunked_upload=True
             )
