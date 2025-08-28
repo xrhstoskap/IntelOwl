@@ -685,6 +685,7 @@ class AbuseCHMixin:
 
 
 class JoeSandboxMixin:
+    url: str = "https://www.joesandbox.com/api/"
     _api_key: str
     system_to_use: str
     polling_duration: int = 60
@@ -706,15 +707,13 @@ class JoeSandboxMixin:
 
     @staticmethod
     def check_if_analysis_present(
-        session: JoeSandbox, observable_url: str = "", file_hash: str = ""
+        session: JoeSandbox, analysis_sample: str
     ) -> list[str] | None:
 
-        observable: str = observable_url if observable_url else file_hash
-
         try:
-            analysis_list = session.analysis_search(observable)
+            analysis_list = session.analysis_search(analysis_sample)
             if analysis_list:
-                logger.info(f"Analysis already present for {observable}")
+                logger.info(f"Analysis already present for {analysis_sample}")
                 result = []
                 for analysis in analysis_list:
                     result.append(analysis["webid"])
@@ -724,20 +723,18 @@ class JoeSandboxMixin:
                 f"Failed to check if analysis is present,due to the error : {e}"
             )
 
-        logger.info(f"No existing analysis found for {observable}")
+        logger.info(f"No existing analysis found for {analysis_sample}")
         return None
 
     def check_submission_exists(
-        self, session: JoeSandbox, observable_url: str = "", file_name: str = ""
+        self, session: JoeSandbox, analysis_sample_name: str
     ) -> str | None:
 
-        observable: str = observable_url if observable_url else file_name
-
-        logger.info(f"Checking if submssion exists for {observable}")
+        logger.info(f"Checking if submssion exists for {analysis_sample_name}")
         submission_list = session.submission_list()
         for submission in submission_list:
             submission_info = session.submission_info(submission["submission_id"])
-            if observable == submission_info["name"]:
+            if analysis_sample_name == submission_info["name"]:
                 logger.info(
                     f"Existing submission found with {submission['submission_id']}"
                 )
@@ -801,20 +798,25 @@ class JoeSandboxMixin:
 
         # checking if similar submission in private account is already present
         analysis_id = self.check_submission_exists(
-            sandbox_session, file_name=observable_name
+            sandbox_session, analysis_sample_name=observable_name
         )
+
         if analysis_id:
             return {analysis_id: sandbox_session.analysis_info(analysis_id)}
 
-        logger.info(f"Existing submission for {observable_name} not found")
+        logger.info(
+            f"Existing submission for {observable_name} not found in private account, \
+            checking in public database"
+        )
 
         # checking if similar analysis is present in public DB
-        logger.info(f"Checking if analysis is present for {observable_name}")
         analysis_ids = (
-            self.check_if_analysis_present(session=sandbox_session, file_hash=file_hash)
+            self.check_if_analysis_present(
+                session=sandbox_session, analysis_sample=file_hash
+            )
             if file_hash
             else self.check_if_analysis_present(
-                session=sandbox_session, observable_url=observable_url
+                session=sandbox_session, analysis_sample=observable_url
             )
         )
 

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class JoeSandboxAnalyzer(ObservableAnalyzer, JoeSandboxMixin):
-    url: str = "https://www.joesandbox.com/api/"
+
     sample_at_url: bool = False
 
     @classmethod

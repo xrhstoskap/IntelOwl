@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 
 class JoeSandboxFile(FileAnalyzer, JoeSandboxMixin):
-    url: str = "https://www.joesandbox.com/api/"
 
     @classmethod
     def update(cls):
