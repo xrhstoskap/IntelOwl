@@ -1,7 +1,7 @@
 import logging
 import socket
 
-from honeyscanner.main import run_honeyscanner
+import honeyscanner.main
 
 from api_app.analyzers_manager.classes import ObservableAnalyzer
 from api_app.choices import Classification
@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 class HoneyScanner(ObservableAnalyzer):
+    honeypot_username: str = ""
+    _honeypot_password: str = ""
 
     @staticmethod
     def resolve_hostname_to_ip(hostname):
@@ -33,7 +35,16 @@ class HoneyScanner(ObservableAnalyzer):
         else:
             ip_address = self.observable_name
 
-        result = run_honeyscanner(ip_address)
+        logger.info(f"Running HoneyScanner for ip_address {ip_address}")
+
+        result = honeyscanner.main.run_honeyscanner(
+            ip_address,
+            username=self.honeypot_username,
+            password=self._honeypot_password,
+        )
+
+        logger.info(f"Successfully executed honeyscanner for ip_address {ip_address}")
+
         return result
 
     @classmethod
@@ -475,9 +486,9 @@ class HoneyScanner(ObservableAnalyzer):
         patches = [
             if_mock_connections(
                 patch(
-                    run_honeyscanner,
+                    "honeyscanner.main.run_honeyscanner",
                     return_value=honeyscanner_result,
                 ),
             )
         ]
-        return super()._monkeypatch(patches)
+        return super()._monkeypatch(patches=patches)
