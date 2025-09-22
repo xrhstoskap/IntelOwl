@@ -5,7 +5,6 @@ from shlex import quote
 
 from api_app.analyzers_manager.classes import ObservableAnalyzer
 from api_app.analyzers_manager.exceptions import AnalyzerRunException
-from tests.mock_utils import if_mock_connections, patch
 
 logger = logging.getLogger(__name__)
 
@@ -40,21 +39,3 @@ class GuardDogGeneric(ObservableAnalyzer):
             std_error = e.stderr
             logger.error(f"Failed to execute command: {e}, {std_error}")
             raise AnalyzerRunException(f"failed to run guarddog: {std_error}")
-
-    @classmethod
-    def _monkeypatch(cls):
-
-        response_from_command = subprocess.CompletedProcess(
-            args=["guarddog", "pypi", "scan", "requests", "--output-format=json"],
-            returncode=0,
-            stdout='{"package": "requests", "issues": 0, "errors": {}, "results": {}, "path": "tmp/T/tmpuoxvqnbr/requests"}',
-            stderr="",
-        )
-
-        patches = [
-            if_mock_connections(
-                patch("subprocess.run", return_value=response_from_command)
-            )
-        ]
-
-        return super()._monkeypatch(patches)
