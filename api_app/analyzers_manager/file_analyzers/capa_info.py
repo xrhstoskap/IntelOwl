@@ -51,15 +51,13 @@ class CapaInfo(FileAnalyzer):
             base_path="api_app.analyzers_manager.file_analyzers",
         )
 
-        analyzer_rules_file_version, created = (
-            AnalyzerRulesFileVersion.objects.update_or_create(
-                python_module=capa_module,
-                defaults={
-                    "last_downloaded_version": latest_version,
-                    "download_url": file_url,
-                    "downloaded_at": timezone.now(),
-                },
-            )
+        _, created = AnalyzerRulesFileVersion.objects.update_or_create(
+            python_module=capa_module,
+            defaults={
+                "last_downloaded_version": latest_version,
+                "download_url": file_url,
+                "downloaded_at": timezone.now(),
+            },
         )
 
         if created:
