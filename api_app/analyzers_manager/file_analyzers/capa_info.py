@@ -4,15 +4,18 @@
 import json
 import logging
 import os
+import shutil
 import subprocess
 from shlex import quote
 from zipfile import ZipFile
 
 import requests
 from django.conf import settings
+from django.utils import timezone
 
 from api_app.analyzers_manager.classes import FileAnalyzer
 from api_app.analyzers_manager.exceptions import AnalyzerRunException
+from api_app.analyzers_manager.models import AnalyzerRulesFileVersion, PythonModule
 from tests.mock_utils import if_mock_connections, patch
 
 logger = logging.getLogger(__name__)
@@ -28,9 +31,44 @@ class CapaInfo(FileAnalyzer):
     shellcode: bool
     arch: str
     timeout: float = 15
+    force_pull_signatures: bool = False
+
+    def _check_if_latest_version(self, latest_version: str) -> bool:
+
+        analyzer_rules_file_version = AnalyzerRulesFileVersion.objects.filter(
+            python_module=self.python_module
+        ).first()
+
+        if analyzer_rules_file_version is None:
+            return False
+
+        return latest_version == analyzer_rules_file_version.last_downloaded_version
 
     @classmethod
-    def _unzip(cls):
+    def _update_rules_file_version(cls, latest_version: str, file_url: str):
+        capa_module = PythonModule.objects.get(
+            module="capa_info.CapaInfo",
+            base_path="api_app.analyzers_manager.file_analyzers",
+        )
+
+        analyzer_rules_file_version, created = (
+            AnalyzerRulesFileVersion.objects.update_or_create(
+                python_module=capa_module,
+                defaults={
+                    "last_downloaded_version": latest_version,
+                    "download_url": file_url,
+                    "downloaded_at": timezone.now(),
+                },
+            )
+        )
+
+        if created:
+            logger.info(f"Created new entry for {capa_module} rules file version")
+        else:
+            logger.info(f"Updated existing entry for {capa_module} rules file version")
+
+    @classmethod
+    def _unzip_rules(cls):
         logger.info(f"Extracting rules at {RULES_LOCATION}")
         with ZipFile(RULES_FILE, mode="r") as archive:
             archive.extractall(
@@ -41,31 +79,46 @@ class CapaInfo(FileAnalyzer):
     @classmethod
     def _download_rules(cls, latest_version: str):
 
-        if not os.path.exists(RULES_LOCATION):
-            os.makedirs(RULES_LOCATION)
+        if os.path.exists(RULES_LOCATION):
+            logger.info(f"Removing existing rules at {RULES_LOCATION}")
+            shutil.rmtree(RULES_LOCATION)
+
+        os.makedirs(RULES_LOCATION)
+        logger.info(f"Created fresh rules directory at {RULES_LOCATION}")
 
         file_to_download = latest_version + ".zip"
         file_url = RULES_URL + file_to_download
         try:
 
             response = requests.get(file_url, stream=True)
-            logger.info(f"Started downloading rules from {file_url}")
+            logger.info(
+                f"Started downloading rules with version: {latest_version} from {file_url}"
+            )
             with open(RULES_FILE, mode="wb+") as file:
                 for chunk in response.iter_content(chunk_size=10 * 1024):
                     file.write(chunk)
+
+            cls._update_rules_file_version(latest_version, file_url)
+            logger.info(f"Bumped up version number in db to {latest_version}")
 
         except Exception as e:
             logger.error(f"Failed to download rules with error: {e}")
             raise AnalyzerRunException("Failed to download rules")
 
-        logger.info(f"Rules have been successfully downloaded at {RULES_LOCATION}")
+        logger.info(
+            f"Rules with version: {latest_version} have been successfully downloaded at {RULES_LOCATION}"
+        )
 
     @classmethod
     def _download_signatures(cls) -> None:
         logger.info(f"Downloading signatures at {SIGNATURE_LOCATION} now")
 
-        if not os.path.exists(SIGNATURE_LOCATION):
-            os.makedirs(SIGNATURE_LOCATION)
+        if os.path.exists(SIGNATURE_LOCATION):
+            logger.info(f"Removing existing signatures at {SIGNATURE_LOCATION}")
+            shutil.rmtree(SIGNATURE_LOCATION)
+
+        os.makedirs(SIGNATURE_LOCATION)
+        logger.info(f"Created fresh signatures directory at {SIGNATURE_LOCATION}")
 
         signatures_url = "https://api.github.com/repos/mandiant/capa/contents/sigs"
         try:
@@ -77,28 +130,29 @@ class CapaInfo(FileAnalyzer):
                 filename = signature["name"]
                 download_url = signature["download_url"]
 
+                signature_file_path = os.path.join(SIGNATURE_LOCATION, filename)
+
                 sig_content = requests.get(download_url, stream=True)
-                with open(filename, mode="wb") as file:
+                with open(signature_file_path, mode="wb") as file:
                     for chunk in sig_content.iter_content(chunk_size=10 * 1024):
                         file.write(chunk)
 
         except Exception as e:
             logger.error(f"Failed to download signature: {e}")
             raise AnalyzerRunException("Failed to update signatures")
-        logger.info("Successfully updated singatures")
+        logger.info("Successfully updated signatures")
 
     @classmethod
     def update(cls) -> bool:
         try:
-            logger.info("Updating capa rules and signatures")
+            logger.info("Updating capa rules")
             response = requests.get(
                 "https://api.github.com/repos/mandiant/capa-rules/releases/latest"
             )
             latest_version = response.json()["tag_name"]
             cls._download_rules(latest_version)
-            cls._unzip()
-            cls._download_signatures()
-            logger.info("Successfully updated capa rules and signatures")
+            cls._unzip_rules()
+            logger.info("Successfully updated capa rules")
 
             return True
 
@@ -109,16 +163,22 @@ class CapaInfo(FileAnalyzer):
 
     def run(self):
         try:
-            if (
-                not (
-                    os.path.isdir(RULES_LOCATION) and os.path.isdir(SIGNATURE_LOCATION)
-                )
-                and not self.update()
-            ):
 
-                raise AnalyzerRunException(
-                    "Couldn't update capa rules or signatures successfully"
-                )
+            response = requests.get(
+                "https://api.github.com/repos/mandiant/capa-rules/releases/latest"
+            )
+            latest_version = response.json()["tag_name"]
+
+            update_status = (
+                True if self._check_if_latest_version(latest_version) else self.update()
+            )
+
+            if self.force_pull_signatures or not os.path.isdir(SIGNATURE_LOCATION):
+                self._download_signatures()
+
+            if not (os.path.isdir(RULES_LOCATION)) and not update_status:
+
+                raise AnalyzerRunException("Couldn't update capa rules")
 
             command: list[str] = ["/usr/local/bin/capa", "--quiet", "--json"]
             shell_code_arch = "sc64" if self.arch == "64" else "sc32"
@@ -136,7 +196,9 @@ class CapaInfo(FileAnalyzer):
 
             command.append(quote(self.filepath))
 
-            logger.info(f"Starting CAPA analysis for {self.filename}")
+            logger.info(
+                f"Starting CAPA analysis for {self.filename} with hash: {self.md5} and command: {command}"
+            )
 
             process: subprocess.CompletedProcess = subprocess.run(
                 command,
@@ -147,13 +209,20 @@ class CapaInfo(FileAnalyzer):
             )
 
             result = json.loads(process.stdout)
-            logger.info("CAPA analysis successfully completed")
+            result["command_executed"] = command
+            result["rules_version"] = latest_version
+
+            logger.info(
+                f"CAPA analysis successfully completed for file: {self.filename} with hash {self.md5}"
+            )
 
         except subprocess.CalledProcessError as e:
             stderr = e.stderr
-            logger.info(f"Capa Info failed to run for {self.filename} with command {e}")
+            logger.info(
+                f"Capa Info failed to run for {self.filename} with hash: {self.md5} with command {e}"
+            )
             raise AnalyzerRunException(
-                f" Analyzer for {self.filename} failed with error: {stderr}"
+                f" Analyzer for {self.filename} with hash: {self.md5} failed with error: {stderr}"
             )
 
         return result

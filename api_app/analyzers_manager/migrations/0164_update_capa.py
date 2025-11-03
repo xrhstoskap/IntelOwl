@@ -6,6 +6,7 @@ from django.db import migrations
 def migrate(apps, schema_editor):
     PythonModule = apps.get_model("api_app", "PythonModule")
     Parameter = apps.get_model("api_app", "Parameter")
+    CrontabSchedule = apps.get_model("django_celery_beat", "CrontabSchedule")
     AnalyzerConfig = apps.get_model("analyzers_manager", "AnalyzerConfig")
 
     pm = PythonModule.objects.get(
@@ -13,7 +14,21 @@ def migrate(apps, schema_editor):
         base_path="api_app.analyzers_manager.file_analyzers",
     )
 
+    new_crontab, created = CrontabSchedule.objects.get_or_create(
+        minute="0",
+        hour="0",
+        day_of_week="*",
+        day_of_month="*",
+        month_of_year="*",
+        timezone="UTC",
+    )
+    if created:
+        pm.update_schedule = new_crontab
+        pm.full_clean()
+        pm.save()
+
     AnalyzerConfig.objects.filter(python_module=pm).update(soft_time_limit=1800)
+    AnalyzerConfig.objects.filter(python_module=pm).update(docker_based=False)
 
     p1 = Parameter(
         name="timeout",
@@ -24,8 +39,20 @@ def migrate(apps, schema_editor):
         python_module=pm,
     )
 
+    p2 = Parameter(
+        name="force_pull_signatures",
+        type="bool",
+        description="Force download signatures from flare-capa github repository",
+        is_secret=False,
+        required=False,
+        python_module=pm,
+    )
+
     p1.full_clean()
     p1.save()
+
+    p2.full_clean()
+    p2.save()
 
 
 class Migration(migrations.Migration):
