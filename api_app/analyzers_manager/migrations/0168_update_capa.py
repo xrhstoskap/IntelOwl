@@ -6,6 +6,7 @@ from django.db import migrations
 def migrate(apps, schema_editor):
     PythonModule = apps.get_model("api_app", "PythonModule")
     Parameter = apps.get_model("api_app", "Parameter")
+    PluginConfig = apps.get_model("api_app", "PluginConfig")
     CrontabSchedule = apps.get_model("django_celery_beat", "CrontabSchedule")
     AnalyzerConfig = apps.get_model("analyzers_manager", "AnalyzerConfig")
 
@@ -53,6 +54,15 @@ def migrate(apps, schema_editor):
 
     p2.full_clean()
     p2.save()
+
+    analyzer_configs = AnalyzerConfig.objects.filter(python_module=pm)
+
+    plugin_config_to_create = [
+        PluginConfig(analyzer_config=config, parameter=p1, value=15)
+        for config in analyzer_configs
+    ]
+
+    PluginConfig.objects.bulk_create(plugin_config_to_create)
 
 
 class Migration(migrations.Migration):

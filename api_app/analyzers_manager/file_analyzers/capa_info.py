@@ -6,17 +6,16 @@ import logging
 import os
 import shutil
 import subprocess
+from pathlib import Path
 from shlex import quote
-from zipfile import ZipFile
 
 import requests
 from django.conf import settings
-from django.utils import timezone
 
 from api_app.analyzers_manager.classes import FileAnalyzer
 from api_app.analyzers_manager.exceptions import AnalyzerRunException
-from api_app.analyzers_manager.models import AnalyzerRulesFileVersion, PythonModule
-from tests.mock_utils import if_mock_connections, patch
+from api_app.analyzers_manager.models import PythonModule
+from api_app.mixins import RulesUtiliyMixin
 
 logger = logging.getLogger(__name__)
 
@@ -27,85 +26,11 @@ RULES_FILE = f"{RULES_LOCATION}/capa_rules.zip"
 RULES_URL = "https://github.com/mandiant/capa-rules/archive/refs/tags/"
 
 
-class CapaInfo(FileAnalyzer):
+class CapaInfo(FileAnalyzer, RulesUtiliyMixin):
     shellcode: bool
     arch: str
     timeout: float = 15
     force_pull_signatures: bool = False
-
-    def _check_if_latest_version(self, latest_version: str) -> bool:
-
-        analyzer_rules_file_version = AnalyzerRulesFileVersion.objects.filter(
-            python_module=self.python_module
-        ).first()
-
-        if analyzer_rules_file_version is None:
-            return False
-
-        return latest_version == analyzer_rules_file_version.last_downloaded_version
-
-    @classmethod
-    def _update_rules_file_version(cls, latest_version: str, file_url: str):
-        capa_module = PythonModule.objects.get(
-            module="capa_info.CapaInfo",
-            base_path="api_app.analyzers_manager.file_analyzers",
-        )
-
-        _, created = AnalyzerRulesFileVersion.objects.update_or_create(
-            python_module=capa_module,
-            defaults={
-                "last_downloaded_version": latest_version,
-                "download_url": file_url,
-                "downloaded_at": timezone.now(),
-            },
-        )
-
-        if created:
-            logger.info(f"Created new entry for {capa_module} rules file version")
-        else:
-            logger.info(f"Updated existing entry for {capa_module} rules file version")
-
-    @classmethod
-    def _unzip_rules(cls):
-        logger.info(f"Extracting rules at {RULES_LOCATION}")
-        with ZipFile(RULES_FILE, mode="r") as archive:
-            archive.extractall(
-                RULES_LOCATION
-            )  # this will overwrite any existing directory
-        logger.info("Rules have been succesfully extracted")
-
-    @classmethod
-    def _download_rules(cls, latest_version: str):
-
-        if os.path.exists(RULES_LOCATION):
-            logger.info(f"Removing existing rules at {RULES_LOCATION}")
-            shutil.rmtree(RULES_LOCATION)
-
-        os.makedirs(RULES_LOCATION)
-        logger.info(f"Created fresh rules directory at {RULES_LOCATION}")
-
-        file_to_download = latest_version + ".zip"
-        file_url = RULES_URL + file_to_download
-        try:
-
-            response = requests.get(file_url, stream=True)
-            logger.info(
-                f"Started downloading rules with version: {latest_version} from {file_url}"
-            )
-            with open(RULES_FILE, mode="wb+") as file:
-                for chunk in response.iter_content(chunk_size=10 * 1024):
-                    file.write(chunk)
-
-            cls._update_rules_file_version(latest_version, file_url)
-            logger.info(f"Bumped up version number in db to {latest_version}")
-
-        except Exception as e:
-            logger.error(f"Failed to download rules with error: {e}")
-            raise AnalyzerRunException("Failed to download rules")
-
-        logger.info(
-            f"Rules with version: {latest_version} have been successfully downloaded at {RULES_LOCATION}"
-        )
 
     @classmethod
     def _download_signatures(cls) -> None:
@@ -141,15 +66,25 @@ class CapaInfo(FileAnalyzer):
         logger.info("Successfully updated signatures")
 
     @classmethod
-    def update(cls) -> bool:
+    def update(cls, anayzer_module: PythonModule) -> bool:
         try:
             logger.info("Updating capa rules")
             response = requests.get(
                 "https://api.github.com/repos/mandiant/capa-rules/releases/latest"
             )
             latest_version = response.json()["tag_name"]
-            cls._download_rules(latest_version)
-            cls._unzip_rules()
+            capa_rules_download_url = RULES_URL + latest_version + ".zip"
+
+            cls._download_rules(
+                rule_set_download_url=capa_rules_download_url,
+                rule_set_directory=RULES_LOCATION,
+                rule_file_path=RULES_FILE,
+                latest_version=latest_version,
+                analyzer_module=anayzer_module,
+            )
+
+            cls._unzip(Path(RULES_FILE))
+
             logger.info("Successfully updated capa rules")
 
             return True
@@ -167,8 +102,12 @@ class CapaInfo(FileAnalyzer):
             )
             latest_version = response.json()["tag_name"]
 
+            capa_analyzer_module = self.python_module
+
             update_status = (
-                True if self._check_if_latest_version(latest_version) else self.update()
+                True
+                if self._check_if_latest_version(latest_version, capa_analyzer_module)
+                else self.update(capa_analyzer_module)
             )
 
             if self.force_pull_signatures or not os.path.isdir(SIGNATURE_LOCATION):
@@ -224,28 +163,3 @@ class CapaInfo(FileAnalyzer):
             )
 
         return result
-
-    @classmethod
-    def _monkeypatch(cls):
-        response_from_command = subprocess.CompletedProcess(
-            args=[
-                "capa",
-                "--quiet",
-                "--json",
-                "-r",
-                "/opt/deploy/files_required/capa/capa-rules",
-                "-s",
-                "/opt/deploy/files_required/capa/sigs",
-                "/opt/deploy/files_required/06ebf06587b38784e2af42dd5fbe56e5",
-            ],
-            returncode=0,
-            stdout='{"meta": {}, "rules": {"contain obfuscated stackstrings": {}, "enumerate PE sections":{}}}',
-            stderr="",
-        )
-        patches = [
-            if_mock_connections(
-                patch.object(CapaInfo, "update", return_value=True),
-                patch("subprocess.run", return_value=response_from_command),
-            )
-        ]
-        return super()._monkeypatch(patches)
