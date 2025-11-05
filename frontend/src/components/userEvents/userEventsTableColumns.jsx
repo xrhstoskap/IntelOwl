@@ -107,13 +107,13 @@ export const userEventsTableEndColumns = [
     maxWidth: 100,
   },
   {
-    Header: "Comments",
+    Header: "Reasons",
     id: "related_threats",
     accessor: (userEvent) => userEvent.data_model.related_threats,
     Cell: ({ value: comments, row }) =>
       comments.length > 0 && (
         <TableCell
-          id={`table-cell-analyzable__${row?.id}`}
+          id={`table-cell-related_threats__${row?.id}`}
           isCopyToClipboard
           isTruncate
           value={comments?.toString()}
@@ -174,7 +174,7 @@ export const userIpWildcardEventsTableColumns = [
     accessor: (userEvent) => userEvent,
     Cell: ({ value, row }) => (
       <TableCell
-        id={`table-cell-query__${row?.id}`}
+        id={`table-cell-network__${row?.id}`}
         isCopyToClipboard
         isTruncate
         value={`${value.start_ip} - ${value.end_ip}`}

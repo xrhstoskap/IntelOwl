@@ -12,19 +12,29 @@ import {
   Input,
   FormFeedback,
   UncontrolledTooltip,
+  Badge,
+  Nav,
+  NavItem,
+  NavLink,
+  TabContent,
+  TabPane,
 } from "reactstrap";
 import PropTypes from "prop-types";
 import { useFormik, FormikProvider, FieldArray } from "formik";
 import axios from "axios";
 import { BsFillTrashFill, BsFillPlusCircleFill } from "react-icons/bs";
 import { MdInfoOutline } from "react-icons/md";
+import { IoMdWarning } from "react-icons/io";
 
 import {
   ArrowToggleIcon,
+  MultiSelectCreatableInput,
   addToast,
+  selectStyles,
   useDebounceInput,
 } from "@certego/certego-ui";
 
+import ReactSelect from "react-select";
 import {
   USER_EVENT_ANALYZABLE,
   USER_EVENT_IP_WILDCARD,
@@ -32,11 +42,12 @@ import {
 } from "../../constants/apiURLs";
 
 import {
-  Evaluations,
+  DataModelEvaluations,
   DataModelKillChainPhases,
+  DataModelKillChainPhasesDescriptions,
+  DataModelTags,
 } from "../../constants/dataModelConst";
 import { ListInput } from "../common/form/ListInput";
-import { TagSelectInput } from "../common/form/TagSelectInput";
 import {
   DecayProgressionTypes,
   DecayProgressionDescription,
@@ -50,6 +61,48 @@ import {
   URL_REGEX,
   HASH_REGEX,
 } from "../../constants/regexConst";
+import { TagsColors } from "../../constants/colorConst";
+import { EvaluationBadge } from "../common/engineBadges";
+
+const RELIABILITY_CONFIRMED_MALICIOUS = 10;
+const RELIABILITY_MALICIOUS = 7;
+const RELIABILITY_CURRENTLY_TRUSTED = 8;
+const RELIABILITY_TRUSTED = 10;
+
+const evaluationOptions = [
+  {
+    id: 0,
+    evaluation: DataModelEvaluations.MALICIOUS,
+    label: "Confirmed malicious",
+    reliability: RELIABILITY_CONFIRMED_MALICIOUS,
+    description:
+      "Artifact that has been verified as actively involved in malicious activity (phishing site, download sample, c2, ...).",
+  },
+  {
+    id: 1,
+    evaluation: DataModelEvaluations.MALICIOUS,
+    label: "Malicious",
+    reliability: RELIABILITY_MALICIOUS,
+    description:
+      "Artifact that is associated with potentially malicious operations (connectivity check, etc.).",
+  },
+  {
+    id: 2,
+    evaluation: DataModelEvaluations.TRUSTED,
+    label: "Currently trusted",
+    reliability: RELIABILITY_CURRENTLY_TRUSTED,
+    description:
+      "Artifact that shows no sign of malicious behavior at present, though its status could change over time.",
+  },
+  {
+    id: 3,
+    evaluation: DataModelEvaluations.TRUSTED,
+    label: "Trusted",
+    reliability: RELIABILITY_TRUSTED,
+    description:
+      "A well-known and trusted artifact associated with a widely used legitimate service (es: google.com, 8.8.8.8, etc...)",
+  },
+];
 
 export function UserEventModal({ analyzables, toggle, isOpen }) {
   console.debug("UserEventModal rendered!");
@@ -61,18 +114,21 @@ export function UserEventModal({ analyzables, toggle, isOpen }) {
   const [wildcard, setWildcard] = React.useState("");
   const [inputState, setInputState] = React.useState({});
   const [wildcardInputError, setWildcardInputError] = React.useState(null);
+  const [advancedEvaluationTab, setAdvancedEvaluationTab] =
+    React.useState(false);
 
   const formik = useFormik({
     initialValues: {
       // base data model fields
       analyzables: analyzables.map((analyzable) => analyzable?.name || ""),
-      evaluation: "",
+      basic_evaluation: "0",
       kill_chain_phase: "",
       external_references: [""],
       related_threats: [""],
       tags: [],
       malware_family: "",
       // advanced fields
+      evaluation: DataModelEvaluations.MALICIOUS,
       reliability: 10,
       decay_progression: DecayProgressionTypes.LINEAR,
       decay_timedelta_days: 120,
@@ -95,7 +151,7 @@ export function UserEventModal({ analyzables, toggle, isOpen }) {
         }
       });
       if (values.related_threats[0] === "") {
-        errors["related_threats-0"] = "Comment is required";
+        errors["related_threats-0"] = "Reason is required";
       }
       if (!Number.isInteger(values.decay_timedelta_days)) {
         errors.decay_timedelta_days = "The value must be a number.";
@@ -110,24 +166,39 @@ export function UserEventModal({ analyzables, toggle, isOpen }) {
       console.debug("errors", errors);
       return errors;
     },
+    validateOnMount: true,
     onSubmit: async () => {
       const editedFields = {};
+      delete formik.values.basic_evaluation; // not needed in the request
       Object.entries(formik.values).forEach(([key, value]) => {
         if (
-          JSON.stringify(value) !== JSON.stringify(formik.initialValues[key]) &&
-          key !== "analyzables"
+          /* order matters! kill chain also HTML and cannot be converted into JSON
+          check before the fields and then check if they are different from the default values
+          */
+          !["analyzables", "kill_chain_phase", "tags"].includes(key) &&
+          JSON.stringify(value) !== JSON.stringify(formik.initialValues[key])
         ) {
           editedFields[key] = value;
         }
+        // special cases for kill chain: it has a key with html as value
+        if (key === "kill_chain_phase" && value !== "") {
+          editedFields.kill_chain_phase = value.value;
+        }
+        if (key === "tags" && value.length) {
+          editedFields.tags = value.map((tag) => tag.value);
+        }
       });
+      console.debug("editedFields", editedFields);
       const evaluation = {
         decay_progression: formik.values.decay_progression,
         decay_timedelta_days: formik.values.decay_timedelta_days,
         data_model_content: {
           ...editedFields,
+          evaluation: formik.values.evaluation,
           reliability: formik.values.reliability,
         },
       };
+      console.debug("evaluation", evaluation);
 
       const failed = [];
       Promise.allSettled(
@@ -185,19 +256,24 @@ export function UserEventModal({ analyzables, toggle, isOpen }) {
   });
 
   React.useEffect(() => {
+    // this useEffect populate initial state in case the model is accessed from previously searched analyzables
     const obj = {};
-    formik.initialValues.analyzables.forEach((analyzable) => {
-      if (analyzable !== "") {
-        obj[analyzable] = { type: UserEventTypes.ANALYZABLE };
+    analyzables.forEach((analyzable) => {
+      if (analyzable.name !== "") {
+        obj[analyzable.name] = {
+          type: UserEventTypes.ANALYZABLE,
+          eventId: analyzable.id,
+        };
       }
     });
     setInputState({ ...inputState, ...obj });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formik.initialValues.analyzables]);
+  }, [analyzables]);
 
   useDebounceInput(inputValue, 1000, setWildcard);
 
   React.useEffect(() => {
+    // this useEffect detect the type of user event while typing
     if (wildcard !== "") {
       // check ip wildcard
       if (
@@ -288,6 +364,9 @@ export function UserEventModal({ analyzables, toggle, isOpen }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wildcard]);
 
+  console.debug("userEventModal - formik values", formik.values);
+  console.debug("userEventModal - inputState", inputState);
+
   return (
     <Modal
       id="user-evaluation-modal"
@@ -299,9 +378,18 @@ export function UserEventModal({ analyzables, toggle, isOpen }) {
       labelledBy="User evaluation modal"
       isOpen={isOpen}
       style={{ minWidth: "70%" }}
-      toggle={() => toggle(false)}
+      toggle={() => {
+        formik.resetForm();
+        toggle(false);
+      }}
     >
-      <ModalHeader className="mx-2" toggle={() => toggle(false)}>
+      <ModalHeader
+        className="mx-2"
+        toggle={() => {
+          formik.resetForm();
+          toggle(false);
+        }}
+      >
         <small className="text-info">Add your evaluation</small>
       </ModalHeader>
       <ModalBody className="m-2">
@@ -464,37 +552,217 @@ export function UserEventModal({ analyzables, toggle, isOpen }) {
                     Evaluation:
                   </Label>
                 </Col>
-                <Col md={8} className="d-flex flex-column align-items-center">
-                  <Input
-                    id="userEvent__evaluation"
-                    type="select"
-                    name="evaluation"
-                    value={formik.values.evaluation}
-                    onBlur={formik.handleBlur}
-                    onChange={formik.handleChange}
-                    className="bg-darker border-dark"
-                    invalid={
-                      formik.touched.evaluation &&
-                      formik.values.evaluation === ""
-                    }
+                <Col>
+                  <Nav tabs className="mt-2">
+                    <NavItem>
+                      <NavLink
+                        className={
+                          advancedEvaluationTab
+                            ? ""
+                            : "active text-info fw-bold"
+                        }
+                        style={{ border: "1px solid #001d24" }}
+                        onClick={() => setAdvancedEvaluationTab(false)}
+                        id="userEvent__evaluation-basic"
+                      >
+                        Basic
+                      </NavLink>
+                    </NavItem>
+                    <NavItem>
+                      <NavLink
+                        className={
+                          advancedEvaluationTab
+                            ? "active text-info fw-bold"
+                            : ""
+                        }
+                        style={{ border: "1px solid #001d24" }}
+                        onClick={() => setAdvancedEvaluationTab(true)}
+                        id="userEvent__evaluation-advanced"
+                      >
+                        Advanced
+                      </NavLink>
+                    </NavItem>
+                  </Nav>
+                  <TabContent
+                    activeTab={advancedEvaluationTab ? "advanced" : "basic"}
+                    className="p-2 mt-2"
                   >
-                    <option value="">Select...</option>
-                    {[Evaluations.MALICIOUS, Evaluations.TRUSTED]
-                      .sort()
-                      .map((value) => (
-                        <option
-                          key={`userEvent__evaluation-select-option-${value}`}
-                          value={value}
-                        >
-                          {value.toUpperCase()}
-                        </option>
-                      ))}
-                  </Input>
-                  <FormFeedback>Evaluation is required</FormFeedback>
+                    <TabPane tabId="basic">
+                      <div className="my-3">
+                        {evaluationOptions.map((value) => (
+                          <FormGroup
+                            check
+                            inline
+                            key={`userEvent__evaluation-basic-${value.id}`}
+                          >
+                            <Input
+                              id={`userEvent__evaluation-basic-${value.id}`}
+                              type="radio"
+                              name="basic_evaluation"
+                              value={value.id}
+                              checked={
+                                formik.values.basic_evaluation ===
+                                value.id.toString()
+                              }
+                              onBlur={formik.handleBlur}
+                              onChange={(event) => {
+                                const basicEval = event.target.value;
+                                formik.setFieldValue(
+                                  "basic_evaluation",
+                                  basicEval,
+                                  false,
+                                );
+                                formik.setFieldValue(
+                                  "evaluation",
+                                  evaluationOptions[basicEval].evaluation,
+                                  false,
+                                );
+                                formik.setFieldValue(
+                                  "reliability",
+                                  evaluationOptions[basicEval].reliability,
+                                  // second set must trigger the validate or update evaluation with pre-populated form won't work
+                                  true,
+                                );
+                              }}
+                            />
+                            <Label
+                              check
+                              for={`userEvent__evaluation-basic-${value.id}`}
+                            >
+                              <EvaluationBadge
+                                id={`userEvent__evaluation-basic-${value.id}`}
+                                evaluation={value.evaluation}
+                                label={value.label}
+                              />
+                            </Label>
+                          </FormGroup>
+                        ))}
+                      </div>
+                      <div className="d-flex flex-column">
+                        {((formik.values.evaluation.toString() ===
+                          DataModelEvaluations.MALICIOUS &&
+                          ![
+                            RELIABILITY_CONFIRMED_MALICIOUS,
+                            RELIABILITY_MALICIOUS,
+                          ].includes(formik.values.reliability)) ||
+                          (formik.values.evaluation.toString() ===
+                            DataModelEvaluations.TRUSTED &&
+                            ![
+                              RELIABILITY_CURRENTLY_TRUSTED,
+                              RELIABILITY_TRUSTED,
+                            ].includes(formik.values.reliability))) && (
+                          <small
+                            className="d-flex align-items-center mb-0 px-2 py-1"
+                            style={{
+                              borderColor: "warning",
+                              borderRadius: 7,
+                              border: "1px solid orange",
+                            }}
+                          >
+                            <IoMdWarning className="text-warning me-2" />
+                            Advanced reliability has been set and save
+                            correctly. Selecting a new basic evaluation will
+                            overwrite the previous settings.
+                          </small>
+                        )}
+                        <small>
+                          {
+                            evaluationOptions[formik.values.basic_evaluation]
+                              ?.description
+                          }
+                        </small>
+                      </div>
+                    </TabPane>
+                    <TabPane tabId="advanced">
+                      <div className="d-flex row mt-3">
+                        <div className="col-4">
+                          {[
+                            DataModelEvaluations.MALICIOUS,
+                            DataModelEvaluations.TRUSTED,
+                          ].map((value) => (
+                            <FormGroup
+                              check
+                              inline
+                              key={`userEvent__evaluation-advanced-${value}`}
+                            >
+                              <Input
+                                id={`userEvent__evaluation-advanced-${value}`}
+                                type="radio"
+                                name="evaluation"
+                                value={value}
+                                checked={
+                                  formik.values.evaluation?.toString() === value
+                                }
+                                onBlur={formik.handleBlur}
+                                onChange={formik.handleChange}
+                              />
+                              <Label
+                                check
+                                for={`userEvent__evaluation-advanced-${value}`}
+                              >
+                                <EvaluationBadge
+                                  id={`userEvent__evaluation-advanced-${value}`}
+                                  evaluation={value}
+                                  label={value}
+                                />
+                              </Label>
+                            </FormGroup>
+                          ))}
+                        </div>
+                        <FormGroup className="d-flex align-items-center col-4">
+                          <Label
+                            className="me-4 mb-0"
+                            for="userEvent__reliability-advanced"
+                          >
+                            Reliability:&nbsp;{formik.values.reliability}
+                          </Label>
+                          <Input
+                            id="userEvent__reliability-advanced"
+                            type="range"
+                            name="reliability"
+                            min="0"
+                            max="10"
+                            step="1"
+                            value={formik.values.reliability}
+                            onBlur={formik.handleBlur}
+                            onChange={(event) => {
+                              formik.setFieldValue(
+                                "reliability",
+                                event.target.value,
+                                false,
+                              );
+                              formik.setFieldValue(
+                                "basic_evaluation",
+                                null,
+                                false,
+                              );
+                            }}
+                            className="color-range-slider ms-2"
+                            style={{
+                              "--slider-fill-color":
+                                formik.values.evaluation.toString() ===
+                                DataModelEvaluations.MALICIOUS
+                                  ? "#ee4544"
+                                  : "#02cc56",
+                              "--fill-percentage": `${
+                                formik.values.reliability * 10
+                              }%`,
+                            }}
+                          />
+                        </FormGroup>
+                      </div>
+                      <small>
+                        {formik.values.evaluation.toString() ===
+                        DataModelEvaluations.MALICIOUS
+                          ? "An artifact associated with malicious behavior. Using the reliability slider, you can adjust the level of confidence that the artifact has that evaluation."
+                          : "An artifact with no evidence of malicious activity. Using the reliability slider, you can adjust the level of confidence that the artifact has that evaluation."}
+                      </small>
+                    </TabPane>
+                  </TabContent>
                 </Col>
               </Row>
-              <hr />
             </FormGroup>
+            <hr />
             <FormGroup>
               <Row>
                 <Col md={2} className="d-flex align-items-center">
@@ -502,7 +770,7 @@ export function UserEventModal({ analyzables, toggle, isOpen }) {
                     className="me-2 mb-0 required"
                     for="userEvent__related_threats"
                   >
-                    Comments:
+                    Reason:
                   </Label>
                 </Col>
                 <Col md={10}>
@@ -553,28 +821,39 @@ export function UserEventModal({ analyzables, toggle, isOpen }) {
                     Kill chain phase:
                   </Label>
                 </Col>
-                <Col md={8} className="d-flex align-items-center">
-                  <Input
-                    id="userEvent__kill_chain_phase"
-                    type="select"
-                    name="kill_chain_phase"
+                <Col sm={8}>
+                  <ReactSelect
+                    isClearable
+                    options={Object.values(DataModelKillChainPhases).map(
+                      (killChainPhase) => ({
+                        value: killChainPhase,
+                        label: (
+                          <div
+                            id={`killChainPhase__${killChainPhase}`}
+                            className="d-flex justify-content-start align-items-start flex-column"
+                          >
+                            <div className="d-flex justify-content-start align-items-baseline flex-column">
+                              <div>{killChainPhase}&nbsp;</div>
+                              <div className="small text-left text-muted">
+                                {DataModelKillChainPhasesDescriptions[
+                                  killChainPhase.toUpperCase()
+                                ] || ""}
+                              </div>
+                            </div>
+                          </div>
+                        ),
+                      }),
+                    )}
+                    styles={selectStyles}
                     value={formik.values.kill_chain_phase}
-                    onBlur={formik.handleBlur}
-                    onChange={formik.handleChange}
-                    className="bg-darker border-dark"
-                  >
-                    <option value="">Select...</option>
-                    {Object.values(DataModelKillChainPhases)
-                      .sort()
-                      .map((value) => (
-                        <option
-                          key={`userEvent__kill_chain_phase-select-option-${value}`}
-                          value={value}
-                        >
-                          {value.toUpperCase()}
-                        </option>
-                      ))}
-                  </Input>
+                    onChange={(killChainPhase) =>
+                      formik.setFieldValue(
+                        "kill_chain_phase",
+                        killChainPhase,
+                        false,
+                      )
+                    }
+                  />
                 </Col>
               </Row>
               <hr />
@@ -584,12 +863,16 @@ export function UserEventModal({ analyzables, toggle, isOpen }) {
                 Tags:
               </Label>
               <Col sm={8}>
-                <TagSelectInput
-                  id="userEvent-tagselectinput"
-                  selectedTags={formik.values.tags}
-                  setSelectedTags={(selectedTags) =>
-                    formik.setFieldValue("tags", selectedTags, false)
-                  }
+                <MultiSelectCreatableInput
+                  id="scanform-tagsselectinput"
+                  options={Object.values(DataModelTags).map((tag) => ({
+                    value: tag,
+                    label: <Badge color={TagsColors[tag]}>{tag}</Badge>,
+                  }))}
+                  value={formik.values.tags}
+                  styles={selectStyles}
+                  onChange={(tag) => formik.setFieldValue("tags", tag, false)}
+                  isClearable
                 />
               </Col>
             </FormGroup>
@@ -612,35 +895,6 @@ export function UserEventModal({ analyzables, toggle, isOpen }) {
             </Row>
             {isOpenAdvancedFields && (
               <>
-                <FormGroup className="mt-4">
-                  <Row>
-                    <Col md={2} className="d-flex align-items-center">
-                      <Label className="me-2 mb-0" for="userEvent__reliability">
-                        Reliability:
-                      </Label>
-                    </Col>
-                    <Col md={8} className="d-flex-column align-items-center">
-                      <Input
-                        id="userEvent__reliability"
-                        type="number"
-                        name="reliability"
-                        value={formik.values.reliability}
-                        onBlur={formik.handleBlur}
-                        onChange={formik.handleChange}
-                        invalid={
-                          !Number.isInteger(formik.values.reliability) ||
-                          formik.values.reliability <= 0 ||
-                          formik.values.reliability > 10
-                        }
-                        className="bg-darker border-0"
-                      />
-                      <FormFeedback>
-                        The reliability value must be a number between 1 and 10
-                      </FormFeedback>
-                    </Col>
-                  </Row>
-                  <hr />
-                </FormGroup>
                 <FormGroup className="mt-4">
                   <Row>
                     <Col md={2} className="d-flex align-items-center">
@@ -725,12 +979,7 @@ export function UserEventModal({ analyzables, toggle, isOpen }) {
                 size="xl"
                 outline
                 className="mx-2 mt-2 text-white"
-                /* dirty return True if values are different then default
-                  we cannot run the validation on mount or we get an infinite loop.
-                */
-                disabled={
-                  !formik.isValid || formik.isSubmitting || !formik.dirty
-                }
+                disabled={!formik.isValid || formik.isSubmitting}
               >
                 Save
               </Button>
@@ -743,7 +992,7 @@ export function UserEventModal({ analyzables, toggle, isOpen }) {
 }
 
 UserEventModal.propTypes = {
-  analyzables: PropTypes.arrayOf(Object),
+  analyzables: PropTypes.array,
   toggle: PropTypes.func.isRequired,
   isOpen: PropTypes.bool.isRequired,
 };
