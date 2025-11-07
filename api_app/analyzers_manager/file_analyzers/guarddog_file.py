@@ -5,7 +5,6 @@ from shlex import quote
 
 from api_app.analyzers_manager.classes import FileAnalyzer
 from api_app.analyzers_manager.exceptions import AnalyzerRunException
-from tests.mock_utils import if_mock_connections, patch
 
 logger = logging.getLogger(__name__)
 
@@ -44,26 +43,3 @@ class GuardDogFile(FileAnalyzer):
             std_error = e.stderr
             logger.error(f"Failed to execute command: {e}, {std_error}")
             raise AnalyzerRunException(f"failed to run guarddog: {std_error}")
-
-    @classmethod
-    def _monkeypatch(cls):
-
-        response_from_command = subprocess.CompletedProcess(
-            args=[
-                "guarddog",
-                "pypi",
-                "verify",
-                "apkid-requirements.txt",
-                "--output-format=json",
-            ],
-            returncode=0,
-            stdout='[{"dependency": "requests", "ver": "2.32", "result": {"iss": 0, "err": {}, "res": {}, "path": "/tmp/requests"}}, {}]',
-            stderr="INFO: Scanning using at most 8 parallel worker threads\n\n",
-        )
-
-        patches = [
-            if_mock_connections(
-                patch("subprocess.run", return_value=response_from_command)
-            )
-        ]
-        return super()._monkeypatch(patches)

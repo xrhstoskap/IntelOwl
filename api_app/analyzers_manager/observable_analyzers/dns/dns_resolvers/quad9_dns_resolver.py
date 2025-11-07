@@ -4,7 +4,6 @@
 """Quad9 DNS resolutions"""
 import logging
 
-import dns.message
 import httpx
 
 from api_app.analyzers_manager import classes
@@ -35,21 +34,21 @@ class Quad9DNSResolver(DoHMixin, classes.ObservableAnalyzer):
         # with 2 or 3 attemps the analyzer should get the data
         attempt_number = 3
         quad9_response = None
-        for attempt in range(0, attempt_number):
+        for attempt in range(attempt_number):
             try:
                 quad9_response = httpx.Client(http2=True).get(
                     complete_url, headers=self.headers, timeout=10
                 )
             except httpx.ConnectError as exception:
-                # if the last attempt fails, raise an error
                 if attempt == attempt_number - 1:
                     raise exception
             else:
                 quad9_response.raise_for_status()
 
-        dns_response = dns.message.from_wire(quad9_response.content)
+        json_response = quad9_response.json()
         resolutions: list[str] = []
-        for answer in dns_response.answer:
-            resolutions.extend([resolution.address for resolution in answer])
+        for answer in json_response.get("Answer", []):
+            if "data" in answer:
+                resolutions.append(answer["data"])
 
         return dns_resolver_response(observable, resolutions)

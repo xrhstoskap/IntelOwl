@@ -5,7 +5,7 @@ django-auth-ldap==5.1.0
 django-radius==1.5.0
 django-filter==25.1
 django-storages==1.14
-django-celery-beat==2.8.1
+django-celery-beat==2.7.0
 django-celery-results==2.5.0
 django-ses == 4.4.0
 django-iam-dbauth==0.2.1
@@ -14,9 +14,9 @@ django-silk==5.3.2
 django-treebeard==4.7
 django-solo==2.4.0
 django_extensions==3.2.3
-jsonschema==4.23.0
+jsonschema==4.25.1
 # django rest framework libs
-Authlib==1.4.0
+Authlib==1.6.5
 djangorestframework==3.16.1
 djangorestframework-filters==1.0.0.dev2
 drf-spectacular==0.28.0
@@ -43,12 +43,12 @@ checkdmarc==5.7.9
 dnspython==2.7.0
 dnstwist[full]==20250130
 google>=3.0.0
-google-cloud-webrisk==1.17.0
-intezer-sdk==1.21
+google-cloud-webrisk==1.19.0
+intezer-sdk==1.24.0
 lief==0.15.1
 maxminddb==2.6.0
 geoip2==4.8.0
-mwdblib==4.5.0
+mwdblib==4.6.0
 oletools==0.60.2
 OTXv2==1.5.12
 peepdf-fork==0.4.3
@@ -93,6 +93,8 @@ phonenumbers==9.0.3
 die-python==0.4.0
 guarddog==2.1.0 # version greater than 2.1.0 raises dependency conflicts
 jbxapi==3.23.0
+yara-x==1.4.0
+
 
 # httpx required for HTTP/2 support (Mullvad DNS rejects HTTP/1.1 with protocol errors)
 httpx[http2]==0.28.1
@@ -108,7 +110,7 @@ pyzipper==0.3.6
 
 # others
 dateparser==1.2.0
-DeepDiff==8.2.0
+DeepDiff==8.6.1
 # phishing form compiler module
 lxml==5.3.0
 Faker==36.1.0
