@@ -383,26 +383,29 @@ export function JobOverview({
         <Container fluid>
           {/* bar with job id and utilities buttons */}
           <Row
-            className="g-0 d-flex-between-end align-items-center"
+            className="g-0 d-flex-between-end align-items-center mb-2"
             id="utilitiesRow"
           >
             <Col md={4}>
-              <h2 className="d-flex align-items-center">
+              <h2 className="d-flex align-items-center mb-0">
                 <span className="me-2 text-secondary">Job #{job.id}</span>
                 <StatusIcon status={job.status} className="small" />
               </h2>
             </Col>
-            <Col md={8} className="d-flex justify-content-end mt-1">
-              <JobActionsBar job={job} />
+            <Col
+              md={8}
+              className="d-flex justify-content-end align-items-center"
+            >
+              <JobActionsBar
+                job={job}
+                relatedInvestigationNumber={relatedInvestigationNumber}
+              />
             </Col>
           </Row>
           {/* job metadata card */}
           <Row className="g-0">
             <Col>
-              <JobInfoCard
-                job={job}
-                relatedInvestigationNumber={relatedInvestigationNumber}
-              />
+              <JobInfoCard job={job} />
             </Col>
           </Row>
           {isRunningJob && (

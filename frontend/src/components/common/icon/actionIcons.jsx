@@ -2,12 +2,12 @@ import React from "react";
 import PropTypes from "prop-types";
 import { Spinner } from "reactstrap";
 import {
-  MdDeleteOutline,
+  MdDelete,
   MdOutlineRefresh,
   MdComment,
   MdFileDownload,
 } from "react-icons/md";
-import { FaRegStopCircle } from "react-icons/fa";
+import { FaRegStopCircle, FaFileDownload } from "react-icons/fa";
 import { BsFillPlusCircleFill } from "react-icons/bs";
 
 // These function are needed in IconButton because it expects Icon as a function
@@ -15,7 +15,7 @@ import { BsFillPlusCircleFill } from "react-icons/bs";
 export function DeleteIcon() {
   return (
     <span className="d-flex align-items-center">
-      <MdDeleteOutline className="text-danger me-1" />
+      <MdDelete className="text-danger me-1" />
       Delete
     </span>
   );
@@ -48,6 +48,15 @@ export function downloadReportIcon() {
     <span className="d-flex align-items-center">
       <MdFileDownload className="me-1" />
       Report
+    </span>
+  );
+}
+
+export function downloadSampleIcon() {
+  return (
+    <span className="d-flex align-items-center">
+      <FaFileDownload className="me-1" />
+      Sample
     </span>
   );
 }

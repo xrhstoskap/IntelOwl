@@ -2,7 +2,7 @@ import React from "react";
 import PropTypes from "prop-types";
 import { useNavigate } from "react-router-dom";
 
-import { ContentSection, IconButton, addToast } from "@certego/certego-ui";
+import { IconButton, addToast } from "@certego/certego-ui";
 
 import { deleteInvestigation } from "./investigationApi";
 import { DeleteIcon } from "../../common/icon/actionIcons";
@@ -26,17 +26,17 @@ export function InvestigationActionsBar({ investigation }) {
   };
 
   return (
-    <ContentSection className="d-inline-flex me-2">
+    <div className="d-inline-flex">
       <IconButton
         id="deletebtn"
         Icon={DeleteIcon}
         size="sm"
-        color="darker"
+        color="light"
         onClick={onDeleteBtnClick}
         title="Delete Investigation"
         titlePlacement="top"
       />
-    </ContentSection>
+    </div>
   );
 }
 

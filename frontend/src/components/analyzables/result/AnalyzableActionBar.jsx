@@ -1,7 +1,7 @@
 import React from "react";
 import PropTypes from "prop-types";
 
-import { ContentSection, IconButton } from "@certego/certego-ui";
+import { IconButton } from "@certego/certego-ui";
 
 import { rescanIcon, addEvaluationIcon } from "../../common/icon/actionIcons";
 import { UserEventModal } from "../../userEvents/UserEventModal";
@@ -10,7 +10,7 @@ export function AnalyzableActionsBar({ analyzable }) {
   const [showUserEventModal, setShowUserEventModal] = React.useState(false);
 
   return (
-    <ContentSection className="d-inline-flex me-2">
+    <div className="d-inline-flex">
       <IconButton
         id="addUserEvaluationBtn"
         Icon={addEvaluationIcon}
@@ -32,14 +32,15 @@ export function AnalyzableActionsBar({ analyzable }) {
         id="rescanbtn"
         Icon={rescanIcon}
         size="sm"
-        color="light"
+        color="info"
         title="Rescan artifact"
         titlePlacement="top"
         href={`/scan?observable=${analyzable.name}`}
         target="_blank"
         rel="noreferrer"
+        className="text-light"
       />
-    </ContentSection>
+    </div>
   );
 }
 
