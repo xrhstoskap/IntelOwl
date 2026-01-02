@@ -43,7 +43,7 @@ class HoneyScanner(ObservableAnalyzer):
             password=self._honeypot_password,
         )
 
-        logger.info(f"Successfully executed honeyscanner for ip_address {ip_address}")
+        logger.info(f"Successfully executed honeyscanner for {ip_address=}")
 
         return result
 
